@@ -42,6 +42,8 @@ async function login(email, password) {
         cookieJar.setCookieSync(cookie, BASE_URL);
       });
       console.log('Cookies set successfully');
+      const cookies = await cookieJar.getCookies(BASE_URL);
+      console.log('Current Cookies:', cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; '));
       return true;
     } else {
       console.error('No cookies in response');
@@ -58,7 +60,7 @@ async function verifyAuth() {
     const cookies = await cookieJar.getCookies(BASE_URL);
     const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
 
-    console.log('Verifying auth with cookies');
+    console.log('Verifying auth with cookies:', cookieString);
 
     const response = await instance.get(`${BASE_URL}/data/doc`, {
       headers: {
@@ -70,6 +72,10 @@ async function verifyAuth() {
     return response.status === 200;
   } catch (error) {
     console.error('Auth verification failed:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+    }
     return false;
   }
 }
@@ -78,6 +84,8 @@ async function searchIRacingName(name) {
   try {
     const cookies = await cookieJar.getCookies(BASE_URL);
     const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
+
+    console.log('Using cookies to search for iRacing name:', cookieString);
 
     const response = await instance.get(`${BASE_URL}/data/lookup/drivers`, {
       params: {
