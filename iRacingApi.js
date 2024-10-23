@@ -9,10 +9,11 @@ dotenv.config();
 const { CookieJar } = tough;
 
 const BASE_URL = 'https://oauth.iracing.com/oauth2';
+const DATA_BASE_URL = 'https://members-ng.iracing.com/data/lookup'; // The base URL for data endpoints.
 const cookieJar = new CookieJar();
 
 const instance = axios.create({
-  httpsAgent: new https.Agent({  
+  httpsAgent: new https.Agent({
     rejectUnauthorized: false
   })
 });
@@ -36,30 +37,6 @@ function generateCodeChallenge(verifier) {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
-}
-
-async function login() {
-  const clientId = process.env.IRACING_CLIENT_ID;
-  const redirectUri = process.env.IRACING_REDIRECT_URI;
-  const codeVerifier = generateCodeVerifier();
-  const codeChallenge = generateCodeChallenge(codeVerifier);
-  
-  console.log('Attempting to start OAuth flow with PKCE...');
-
-  try {
-    // Construct the authorization URL
-    const authorizeUrl = `${BASE_URL}/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=iracing.profile&code_challenge=${codeChallenge}&code_challenge_method=S256`;
-
-    console.log('Redirecting user to:', authorizeUrl);
-    // The client should be redirected to this URL for login; here you need user interaction.
-    // After user interaction, they will be redirected to the redirect_uri with a code.
-
-    // TODO: Add mechanism to manage the redirect and complete the OAuth flow.
-    // This is typically done through a web page redirect in the browser.
-
-  } catch (error) {
-    console.error('Failed to start the OAuth flow:', error.message);
-  }
 }
 
 async function exchangeCodeForToken(code, codeVerifier) {
@@ -106,8 +83,66 @@ async function verifyAuth(accessToken) {
   }
 }
 
+// Function to search for an iRacing driver by name
+async function searchIRacingName(name) {
+  try {
+    // Retrieve cookies for making authenticated requests
+    const cookies = await cookieJar.getCookies(DATA_BASE_URL);
+    const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
+
+    console.log('Attempting to search for iRacing driver by name:', name);
+
+    // Request to search for driver data
+    const response = await instance.get(`${DATA_BASE_URL}/drivers`, {
+      params: {
+        search_term: name,
+        lowerbound: 1,
+        upperbound: 25
+      },
+      headers: {
+        'Cookie': cookieString,
+        'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)'
+      }
+    });
+
+    // If a valid response with a driver link is received, proceed to get driver details
+    if (response.data && response.data.link) {
+      const driverDataResponse = await instance.get(response.data.link);
+      const drivers = Array.isArray(driverDataResponse.data) ? driverDataResponse.data : [];
+
+      if (drivers.length > 0) {
+        // Attempt to find a matching driver by comparing names
+        const matchingDriver = drivers.find(driver => 
+          driver.display_name.toLowerCase() === name.toLowerCase() ||
+          driver.display_name.toLowerCase().includes(name.toLowerCase())
+        );
+
+        if (matchingDriver) {
+          console.log(`Driver found: Name - ${matchingDriver.display_name}, ID - ${matchingDriver.cust_id}`);
+          return {
+            exists: true,
+            name: matchingDriver.display_name,
+            id: matchingDriver.cust_id
+          };
+        }
+      }
+    }
+
+    // If no matching driver is found, log this outcome
+    console.log(`Driver with name "${name}" not found in iRacing.`);
+    return { exists: false };
+  } catch (error) {
+    console.error('Error searching for iRacing name:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+    }
+    throw error;
+  }
+}
+
 export {
-  login,
   exchangeCodeForToken,
-  verifyAuth
+  verifyAuth,
+  searchIRacingName
 };

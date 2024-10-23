@@ -1,11 +1,9 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import { login, exchangeCodeForToken, verifyAuth } from './iRacingApi.js';
+import { exchangeCodeForToken, verifyAuth, searchIRacingName } from './iRacingApi.js';
 
 dotenv.config();
 const app = express();
-
-// Use the PORT environment variable provided by Render, or fallback to 3001 if not set (for local testing)
 const PORT = process.env.PORT || 3001;
 
 let currentAccessToken = null;
@@ -64,7 +62,32 @@ app.get('/profile', async (req, res) => {
   }
 });
 
-// Bind to the correct port - either from Render's environment or fallback for local development
+// Endpoint to search for an iRacing driver by name
+app.get('/api/search-iracing-name', async (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) {
+      return res.status(400).json({ error: 'Name parameter is required' });
+    }
+
+    console.log(`Received search request for iRacing name: ${name}`);
+
+    const result = await searchIRacingName(name);
+    if (result.exists) {
+      res.json({ exists: true, name: result.name, id: result.id });
+    } else {
+      res.json({ exists: false, message: `Driver with name "${name}" not found in iRacing.` });
+    }
+  } catch (error) {
+    console.error('Error in search-iracing-name endpoint:', error);
+    res.status(500).json({
+      error: 'An error occurred while searching for the iRacing name',
+      details: error.message
+    });
+  }
+});
+
+// Start the server and attempt initial login to iRacing API
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
