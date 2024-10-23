@@ -37,16 +37,22 @@ async function login(email, password) {
       }
     });
 
+    console.log('Login response:', response.status, response.statusText);
+    console.log('Response headers:', JSON.stringify(response.headers, null, 2));
+    console.log('Response data:', JSON.stringify(response.data, null, 2));
+
     if (response.headers['set-cookie']) {
       response.headers['set-cookie'].forEach(cookie => {
         cookieJar.setCookieSync(cookie, BASE_URL);
       });
       console.log('Cookies set successfully');
+
+      // Log cookies after setting them
+      const cookies = await cookieJar.getCookies(BASE_URL);
+      console.log('Current Cookies After Login:', cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; '));
       return true;
     } else {
       console.error('No cookies in response');
-      console.log('Response headers:', response.headers);
-      console.log('Response data:', response.data);
       return false;
     }
   } catch (error) {
@@ -64,11 +70,12 @@ async function verifyAuth() {
     const cookies = await cookieJar.getCookies(BASE_URL);
     const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
 
-    console.log('Verifying auth with cookies');
+    console.log('Verifying auth with cookies:', cookieString);
 
     const response = await instance.get(`${BASE_URL}/data/doc`, {
       headers: {
-        'Cookie': cookieString
+        'Cookie': cookieString,
+        'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)' // Adding a User-Agent to see if that changes the behavior
       }
     });
 
@@ -89,6 +96,8 @@ async function searchIRacingName(name) {
     const cookies = await cookieJar.getCookies(BASE_URL);
     const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
 
+    console.log('Using cookies to search for iRacing name:', cookieString);
+
     const response = await instance.get(`${BASE_URL}/data/lookup/drivers`, {
       params: {
         search_term: name,
@@ -99,6 +108,9 @@ async function searchIRacingName(name) {
         'Cookie': cookieString
       }
     });
+
+    console.log('Search response:', response.status, response.statusText);
+    console.log('Response data:', JSON.stringify(response.data, null, 2));
 
     if (response.data && response.data.link) {
       const driverDataResponse = await instance.get(response.data.link);
