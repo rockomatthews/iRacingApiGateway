@@ -4,10 +4,16 @@ import { login, exchangeCodeForToken, verifyAuth } from './iRacingApi.js';
 
 dotenv.config();
 const app = express();
+
+// Use the PORT environment variable provided by Render, or fallback to 3001 if not set (for local testing)
 const PORT = process.env.PORT || 3001;
 
 let currentAccessToken = null;
 let currentCodeVerifier = null;
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK' });
+});
 
 app.get('/login', (req, res) => {
   // Generate a new code verifier and code challenge each time
@@ -58,6 +64,7 @@ app.get('/profile', async (req, res) => {
   }
 });
 
+// Bind to the correct port - either from Render's environment or fallback for local development
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
