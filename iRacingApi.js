@@ -84,62 +84,71 @@ async function verifyAuth(accessToken) {
 }
 
 // Function to search for an iRacing driver by name
-async function searchIRacingName(name) {
-  try {
-    // Retrieve cookies for making authenticated requests
-    const cookies = await cookieJar.getCookies(DATA_BASE_URL);
-    const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
-
-    console.log('Attempting to search for iRacing driver by name:', name);
-
-    // Request to search for driver data
-    const response = await instance.get(`${DATA_BASE_URL}/drivers`, {
-      params: {
-        search_term: name,
-        lowerbound: 1,
-        upperbound: 25
-      },
-      headers: {
-        'Cookie': cookieString,
-        'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)'
-      }
-    });
-
-    // If a valid response with a driver link is received, proceed to get driver details
-    if (response.data && response.data.link) {
-      const driverDataResponse = await instance.get(response.data.link);
-      const drivers = Array.isArray(driverDataResponse.data) ? driverDataResponse.data : [];
-
-      if (drivers.length > 0) {
-        // Attempt to find a matching driver by comparing names
-        const matchingDriver = drivers.find(driver => 
-          driver.display_name.toLowerCase() === name.toLowerCase() ||
-          driver.display_name.toLowerCase().includes(name.toLowerCase())
-        );
-
-        if (matchingDriver) {
-          console.log(`Driver found: Name - ${matchingDriver.display_name}, ID - ${matchingDriver.cust_id}`);
-          return {
-            exists: true,
-            name: matchingDriver.display_name,
-            id: matchingDriver.cust_id
-          };
+async function searchIRacingName(name, accessToken) {
+    try {
+      // Retrieve cookies to make sure authenticated requests are used
+      const cookies = await cookieJar.getCookies(DATA_BASE_URL);
+      const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
+  
+      console.log('Attempting to search for iRacing driver by name:', name);
+      
+      // Request to search for driver data using cookies and access token
+      const response = await instance.get(`${DATA_BASE_URL}/drivers`, {
+        params: {
+          search_term: name,
+          lowerbound: 1,
+          upperbound: 25
+        },
+        headers: {
+          'Cookie': cookieString,
+          'Authorization': `Bearer ${accessToken}`, // Adding the access token in the headers
+          'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)'
+        }
+      });
+  
+      // If a valid response with a driver link is received, proceed to get driver details
+      if (response.data && response.data.link) {
+        const driverDataResponse = await instance.get(response.data.link, {
+          headers: {
+            'Cookie': cookieString,
+            'Authorization': `Bearer ${accessToken}`, // Adding the access token here too
+            'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)'
+          }
+        });
+  
+        const drivers = Array.isArray(driverDataResponse.data) ? driverDataResponse.data : [];
+  
+        if (drivers.length > 0) {
+          // Attempt to find a matching driver by comparing names
+          const matchingDriver = drivers.find(driver => 
+            driver.display_name.toLowerCase() === name.toLowerCase() ||
+            driver.display_name.toLowerCase().includes(name.toLowerCase())
+          );
+  
+          if (matchingDriver) {
+            console.log(`Driver found: Name - ${matchingDriver.display_name}, ID - ${matchingDriver.cust_id}`);
+            return {
+              exists: true,
+              name: matchingDriver.display_name,
+              id: matchingDriver.cust_id
+            };
+          }
         }
       }
+  
+      // If no matching driver is found, log this outcome
+      console.log(`Driver with name "${name}" not found in iRacing.`);
+      return { exists: false };
+    } catch (error) {
+      console.error('Error searching for iRacing name:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
     }
-
-    // If no matching driver is found, log this outcome
-    console.log(`Driver with name "${name}" not found in iRacing.`);
-    return { exists: false };
-  } catch (error) {
-    console.error('Error searching for iRacing name:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-    }
-    throw error;
   }
-}
+  
 
 export {
   exchangeCodeForToken,

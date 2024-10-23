@@ -64,28 +64,33 @@ app.get('/profile', async (req, res) => {
 
 // Endpoint to search for an iRacing driver by name
 app.get('/api/search-iracing-name', async (req, res) => {
-  try {
-    const { name } = req.query;
-    if (!name) {
-      return res.status(400).json({ error: 'Name parameter is required' });
+    try {
+      const { name } = req.query;
+      if (!name) {
+        return res.status(400).json({ error: 'Name parameter is required' });
+      }
+  
+      if (!currentAccessToken) {
+        return res.status(401).json({ error: 'Unauthorized. Please login first.' });
+      }
+  
+      console.log(`Received search request for iRacing name: ${name}`);
+  
+      const result = await searchIRacingName(name, currentAccessToken);
+      if (result.exists) {
+        res.json({ exists: true, name: result.name, id: result.id });
+      } else {
+        res.json({ exists: false, message: `Driver with name "${name}" not found in iRacing.` });
+      }
+    } catch (error) {
+      console.error('Error in search-iracing-name endpoint:', error);
+      res.status(500).json({
+        error: 'An error occurred while searching for the iRacing name',
+        details: error.message
+      });
     }
-
-    console.log(`Received search request for iRacing name: ${name}`);
-
-    const result = await searchIRacingName(name);
-    if (result.exists) {
-      res.json({ exists: true, name: result.name, id: result.id });
-    } else {
-      res.json({ exists: false, message: `Driver with name "${name}" not found in iRacing.` });
-    }
-  } catch (error) {
-    console.error('Error in search-iracing-name endpoint:', error);
-    res.status(500).json({
-      error: 'An error occurred while searching for the iRacing name',
-      details: error.message
-    });
-  }
-});
+  });
+  
 
 // Start the server and attempt initial login to iRacing API
 app.listen(PORT, () => {
