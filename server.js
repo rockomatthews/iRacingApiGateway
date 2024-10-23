@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
-import { login, verifyAuth, manualReAuth, searchIRacingName } from './iRacingApi.js';
+import { login, verifyAuth, searchIRacingName } from './iRacingApi.js';
 
 dotenv.config();
 
@@ -28,15 +28,8 @@ app.use(async (req, res, next) => {
     console.log('Verifying authentication before processing request...');
     const isAuthenticated = await verifyAuth();
     if (!isAuthenticated) {
-      console.log('Authentication failed. Attempting manual re-authentication...');
-      await manualReAuth();
-      const reAuthSuccess = await verifyAuth();
-      if (!reAuthSuccess) {
-        console.error('Re-authentication failed. Please check credentials or connection.');
-        return res.status(401).json({ error: 'Authentication failed after re-authentication attempt' });
-      } else {
-        console.log('Re-authentication successful. Proceeding with request.');
-      }
+      console.error('Authentication failed. Request denied.');
+      return res.status(401).json({ error: 'Authentication failed. Please check credentials or connection.' });
     } else {
       console.log('Authentication verified successfully. Proceeding with request.');
     }
