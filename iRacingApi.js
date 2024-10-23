@@ -8,7 +8,7 @@ dotenv.config();
 
 const { CookieJar } = tough;
 
-const BASE_URL = 'https://members-ng.iracing.com';
+const BASE_URL = 'https://oauth.iracing.com/oauth2';
 const cookieJar = new CookieJar();
 
 const instance = axios.create({
@@ -17,140 +17,97 @@ const instance = axios.create({
   })
 });
 
-function hashPassword(password, email) {
-  const hash = crypto.createHash('sha256');
-  hash.update(password + email.toLowerCase());
-  return hash.digest('base64');
+// Function to generate a random code verifier between 43 and 128 characters
+function generateCodeVerifier() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890-._~';
+  const length = 128;
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * characters.length);
+    result += characters[randomIndex];
+  }
+  return result;
 }
 
-async function login(email, password) {
-  console.log('Attempting to login...');
-  const hashedPassword = hashPassword(password, email);
+// Function to generate a code challenge from the code verifier
+function generateCodeChallenge(verifier) {
+  const hash = crypto.createHash('sha256').update(verifier).digest();
+  return hash.toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+async function login() {
+  const clientId = process.env.IRACING_CLIENT_ID;
+  const redirectUri = process.env.IRACING_REDIRECT_URI;
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
+  
+  console.log('Attempting to start OAuth flow with PKCE...');
 
   try {
-    const response = await instance.post(`${BASE_URL}/auth`, {
-      email,
-      password: hashedPassword
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
+    // Construct the authorization URL
+    const authorizeUrl = `${BASE_URL}/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=iracing.profile&code_challenge=${codeChallenge}&code_challenge_method=S256`;
 
-    console.log('Login response:', response.status, response.statusText);
-    console.log('Response headers:', JSON.stringify(response.headers, null, 2));
-    console.log('Response data:', JSON.stringify(response.data, null, 2));
+    console.log('Redirecting user to:', authorizeUrl);
+    // The client should be redirected to this URL for login; here you need user interaction.
+    // After user interaction, they will be redirected to the redirect_uri with a code.
 
-    if (response.headers['set-cookie']) {
-      response.headers['set-cookie'].forEach(cookie => {
-        cookieJar.setCookieSync(cookie, BASE_URL);
-      });
-      console.log('Cookies set successfully');
+    // TODO: Add mechanism to manage the redirect and complete the OAuth flow.
+    // This is typically done through a web page redirect in the browser.
 
-      // Log cookies after setting them
-      const cookies = await cookieJar.getCookies(BASE_URL);
-      console.log('Current Cookies After Login:', cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; '));
-      return true;
-    } else {
-      console.error('No cookies in response');
-      return false;
-    }
   } catch (error) {
-    console.error('Login failed:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-    }
-    return false;
+    console.error('Failed to start the OAuth flow:', error.message);
   }
 }
 
-async function verifyAuth() {
+async function exchangeCodeForToken(code, codeVerifier) {
+  console.log('Attempting to exchange code for token...');
   try {
-    const cookies = await cookieJar.getCookies(BASE_URL);
-    const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
-
-    console.log('Verifying auth with cookies:', cookieString);
-
-    const response = await instance.get(`${BASE_URL}/data/doc`, {
+    const response = await instance.post(`${BASE_URL}/token`, null, {
+      params: {
+        grant_type: 'authorization_code',
+        client_id: process.env.IRACING_CLIENT_ID,
+        code: code,
+        redirect_uri: process.env.IRACING_REDIRECT_URI,
+        code_verifier: codeVerifier
+      },
       headers: {
-        'Cookie': cookieString,
-        'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)' // Adding a User-Agent to see if that changes the behavior
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    console.log('Token exchange response:', response.status, response.statusText);
+    console.log('Response data:', response.data);
+    
+    return response.data.access_token;
+  } catch (error) {
+    console.error('Failed to exchange code for token:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+async function verifyAuth(accessToken) {
+  try {
+    console.log('Verifying authorization with access token...');
+    const response = await instance.get(`${BASE_URL}/iracing/profile`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; iRacing/1.0)'
       }
     });
 
     console.log('Verification response status:', response.status);
     return response.status === 200;
   } catch (error) {
-    console.error('Auth verification failed:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-    }
+    console.error('Auth verification failed:', error.response?.data || error.message);
     return false;
   }
 }
 
-async function searchIRacingName(name) {
-  try {
-    const cookies = await cookieJar.getCookies(BASE_URL);
-    const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
-
-    console.log('Using cookies to search for iRacing name:', cookieString);
-
-    const response = await instance.get(`${BASE_URL}/data/lookup/drivers`, {
-      params: {
-        search_term: name,
-        lowerbound: 1,
-        upperbound: 25
-      },
-      headers: {
-        'Cookie': cookieString
-      }
-    });
-
-    console.log('Search response:', response.status, response.statusText);
-    console.log('Response data:', JSON.stringify(response.data, null, 2));
-
-    if (response.data && response.data.link) {
-      const driverDataResponse = await instance.get(response.data.link);
-      const drivers = Array.isArray(driverDataResponse.data) ? driverDataResponse.data : [];
-
-      if (drivers.length > 0) {
-        const matchingDriver = drivers.find(driver => 
-          driver.display_name.toLowerCase() === name.toLowerCase() ||
-          driver.display_name.toLowerCase().includes(name.toLowerCase())
-        );
-
-        if (matchingDriver) {
-          return {
-            exists: true,
-            name: matchingDriver.display_name,
-            id: matchingDriver.cust_id
-          };
-        }
-      }
-    }
-
-    return { exists: false };
-  } catch (error) {
-    console.error('Error searching for iRacing name:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-    }
-    throw error;
-  }
-}
-
-async function manualReAuth() {
-  console.log('Manual re-authentication triggered...');
-  await login(process.env.IRACING_EMAIL, process.env.IRACING_PASSWORD);
-}
-
 export {
   login,
-  verifyAuth,
-  searchIRacingName,
-  manualReAuth
+  exchangeCodeForToken,
+  verifyAuth
 };

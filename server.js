@@ -1,87 +1,65 @@
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
-import cookieParser from 'cookie-parser';
-import { login, verifyAuth, searchIRacingName } from './iRacingApi.js';
+import { login, exchangeCodeForToken, verifyAuth } from './iRacingApi.js';
 
 dotenv.config();
-
 const app = express();
-
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.speedtrapbets.com';
-
-app.use(cors({
-  origin: FRONTEND_URL,
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
-
-app.use(express.json());
-app.use(cookieParser());
-
 const PORT = process.env.PORT || 3001;
 
-// Middleware to check authentication before each request
-app.use(async (req, res, next) => {
+let currentAccessToken = null;
+let currentCodeVerifier = null;
+
+app.get('/login', (req, res) => {
+  // Generate a new code verifier and code challenge each time
+  currentCodeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(currentCodeVerifier);
+  
+  const clientId = process.env.IRACING_CLIENT_ID;
+  const redirectUri = process.env.IRACING_REDIRECT_URI;
+  
+  const authorizeUrl = `${BASE_URL}/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=iracing.profile&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+
+  console.log('Redirecting to:', authorizeUrl);
+  res.redirect(authorizeUrl);
+});
+
+app.get('/callback', async (req, res) => {
+  const { code } = req.query;
+
+  if (!code) {
+    return res.status(400).send('Authorization code not provided');
+  }
+
   try {
-    console.log('Verifying authentication before processing request...');
-    const isAuthenticated = await verifyAuth();
-    if (!isAuthenticated) {
-      console.error('Authentication failed. Request denied.');
-      return res.status(401).json({ error: 'Authentication failed. Please check credentials or connection.' });
+    // Exchange the code for an access token
+    const accessToken = await exchangeCodeForToken(code, currentCodeVerifier);
+    if (accessToken) {
+      currentAccessToken = accessToken;
+      res.json({ message: 'Login successful', accessToken });
     } else {
-      console.log('Authentication verified successfully. Proceeding with request.');
+      res.status(500).send('Failed to retrieve access token');
     }
-    next();
   } catch (error) {
-    console.error('Error in authentication middleware:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    console.error('Callback processing failed:', error.message);
+    res.status(500).send('An error occurred during callback processing');
   }
 });
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK' });
-});
-
-// Endpoint to search for an iRacing name
-app.get('/api/search-iracing-name', async (req, res) => {
-  try {
-    const { name } = req.query;
-    if (!name) {
-      return res.status(400).json({ error: 'Name parameter is required' });
-    }
-
-    console.log(`Received search request for iRacing name: ${name}`);
-
-    const result = await searchIRacingName(name);
-    console.log('Search result:', result);
-
-    if (result.exists) {
-      res.json({ exists: true, name: result.name, id: result.id });
-    } else {
-      res.json({ exists: false, message: `${name} has not been found in iRacing.` });
-    }
-  } catch (error) {
-    console.error('Error in search-iracing-name endpoint:', error);
-    res.status(500).json({ 
-      error: 'An error occurred while searching for the iRacing name', 
-      details: error.message
-    });
+app.get('/profile', async (req, res) => {
+  if (!currentAccessToken) {
+    return res.status(401).send('Unauthorized: Please login first');
   }
-});
 
-// Start the server and attempt login to iRacing API
-app.listen(PORT, async () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('Attempting initial login to iRacing API...');
-  const loginSuccess = await login(process.env.IRACING_EMAIL, process.env.IRACING_PASSWORD);
-  if (!loginSuccess) {
-    console.error('Initial login failed. Please check your credentials or network connection. The server is running, but some functionality may be limited until login is successful.');
+  const isValid = await verifyAuth(currentAccessToken);
+  if (isValid) {
+    res.send('Profile access granted');
   } else {
-    console.log('Initial authentication successful. Server is fully operational.');
+    res.status(401).send('Unauthorized: Token verification failed');
   }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 export default app;
