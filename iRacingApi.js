@@ -37,6 +37,9 @@ async function login(email, password) {
       }
     });
 
+    console.log('Login response:', response.status, response.statusText);
+    console.log('Response headers:', JSON.stringify(response.headers, null, 2));
+
     if (response.headers['set-cookie']) {
       response.headers['set-cookie'].forEach(cookie => {
         cookieJar.setCookieSync(cookie, BASE_URL);
@@ -51,6 +54,10 @@ async function login(email, password) {
     }
   } catch (error) {
     console.error('Login failed:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+    }
     return false;
   }
 }
@@ -97,6 +104,9 @@ async function searchIRacingName(name) {
         'Cookie': cookieString
       }
     });
+
+    console.log('Search response:', response.status, response.statusText);
+    console.log('Response data:', JSON.stringify(response.data, null, 2));
 
     if (response.data && response.data.link) {
       const driverDataResponse = await instance.get(response.data.link);
