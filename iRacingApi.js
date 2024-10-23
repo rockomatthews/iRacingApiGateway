@@ -74,6 +74,53 @@ async function verifyAuth() {
   }
 }
 
+async function searchIRacingName(name) {
+  try {
+    const cookies = await cookieJar.getCookies(BASE_URL);
+    const cookieString = cookies.map(cookie => `${cookie.key}=${cookie.value}`).join('; ');
+
+    const response = await instance.get(`${BASE_URL}/data/lookup/drivers`, {
+      params: {
+        search_term: name,
+        lowerbound: 1,
+        upperbound: 25
+      },
+      headers: {
+        'Cookie': cookieString
+      }
+    });
+
+    if (response.data && response.data.link) {
+      const driverDataResponse = await instance.get(response.data.link);
+      const drivers = Array.isArray(driverDataResponse.data) ? driverDataResponse.data : [];
+
+      if (drivers.length > 0) {
+        const matchingDriver = drivers.find(driver => 
+          driver.display_name.toLowerCase() === name.toLowerCase() ||
+          driver.display_name.toLowerCase().includes(name.toLowerCase())
+        );
+
+        if (matchingDriver) {
+          return {
+            exists: true,
+            name: matchingDriver.display_name,
+            id: matchingDriver.cust_id
+          };
+        }
+      }
+    }
+
+    return { exists: false };
+  } catch (error) {
+    console.error('Error searching for iRacing name:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+    }
+    throw error;
+  }
+}
+
 async function manualReAuth() {
   try {
     await login(process.env.IRACING_EMAIL, process.env.IRACING_PASSWORD);
@@ -86,5 +133,6 @@ async function manualReAuth() {
 export {
   login,
   verifyAuth,
-  manualReAuth
+  manualReAuth,
+  searchIRacingName
 };
